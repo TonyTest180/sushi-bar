@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Заказы — Классные Суши</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;800&family=Unbounded:wght@600;800&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:'Nunito',sans-serif;color:#1F1B3A;background:#FFF5F3}
+h1,h2,h3{font-family:'Unbounded',sans-serif;margin:0}
+button,input{font:inherit}button{cursor:pointer}
+.bar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;padding:14px 4%;background:#1F1B3A;color:#fff;position:sticky;top:0;z-index:5}
+.btn{border:0;border-radius:99px;padding:10px 20px;min-height:44px;font-weight:800;background:#D62839;color:#fff;transition:transform .2s;display:inline-flex;align-items:center;justify-content:center}
+.btn:hover{transform:translateY(-2px)}.btn:disabled{opacity:.6}
+.btn.alt{background:#FFC93C;color:#1F1B3A}.btn.ghost{background:#fff;color:#1F1B3A;border:2px solid #1F1B3A}
+.fld{width:100%;border:2px solid #D9D3EA;border-radius:14px;padding:12px 16px;min-height:48px;background:#fff;color:#1F1B3A}
+.fld:focus{outline:0;border-color:#D62839;box-shadow:0 0 0 4px #FFD6DE}
+.board{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:20px;padding:24px 4% 60px;align-items:start}
+.col h2{font-size:16px;margin-bottom:14px;display:flex;align-items:center;gap:10px}
+.col h2 span{background:#1F1B3A;color:#fff;border-radius:99px;padding:2px 10px;font-size:13px}
+.o{background:#fff;border-radius:20px;padding:18px;margin-bottom:14px;box-shadow:0 6px 18px rgba(31,27,58,.08);display:flex;flex-direction:column;gap:8px;animation:up .5s both;border-left:6px solid var(--c)}
+.o.fresh{animation:up .5s both,flash 1.2s 3}
+@keyframes up{from{opacity:0;transform:translateY(18px)}}
+@keyframes flash{50%{box-shadow:0 0 0 6px #FFC93C}}
+.o ul{margin:0;padding-left:18px;line-height:1.5}
+.o a{color:#D62839;font-weight:800}
+.box{max-width:420px;margin:12vh auto;background:#fff;border-radius:28px;padding:36px;display:flex;flex-direction:column;gap:16px;box-shadow:0 8px 24px rgba(31,27,58,.1)}
+label{font-weight:800;display:block;margin-bottom:6px}
+#toast{position:fixed;left:50%;bottom:24px;transform:translate(-50%,120px);background:#1F1B3A;color:#fff;padding:14px 24px;border-radius:99px;font-weight:800;transition:.3s;z-index:9}
+#toast.show{transform:translate(-50%,0)}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div id="app"></div><div id="toast" role="status"></div>
+<script>
+// ===== Те же данные, что и в index.html =====
+const SUPABASE_URL = 'https://octgohfcbrhmwoaikthi.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_jHX4mGBF7TI5ltljeSwH_Q_g2rtaHt1';
+// ============================================
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const rub = n => Number(n).toLocaleString('ru-RU') + ' ₽';
+const COLS = [['new','Новые','#D62839'],['cooking','Готовятся','#FFC93C'],['delivering','В пути','#4C9F70'],['finished','Завершённые','#8C86A8']];
+const NEXT = {new:['cooking','Принять в работу'], cooking:['delivering','Передать курьеру'], delivering:['done','Доставлен']};
+const LABEL = {done:'Доставлен', cancelled:'Отменён'};
+const S = {state:'loading', orders:[], fresh:new Set(), busy:false};
+let tt, ac;
+function toast(t){const e=document.getElementById('toast');e.textContent=t;e.classList.add('show');clearTimeout(tt);tt=setTimeout(()=>e.classList.remove('show'),4000)}
+function beep(){try{ac=ac||new AudioContext();[880,1175].forEach((f,i)=>{const o=ac.createOscillator(),g=ac.createGain();o.frequency.value=f;o.connect(g);g.connect(ac.destination);g.gain.setValueAtTime(.2,ac.currentTime+i*.18);g.gain.exponentialRampToValueAtTime(.001,ac.currentTime+i*.18+.3);o.start(ac.currentTime+i*.18);o.stop(ac.currentTime+i*.18+.3)})}catch(e){}}
+
+async function check(){
+  const {data:{session}} = await sb.auth.getSession();
+  if (!session){ S.state = 'login'; return render(); }
+  const {data} = await sb.rpc('is_admin');
+  if (!data){ S.state = 'denied'; return render(); }
+  S.state = 'board'; await load(); subscribe();
+}
+async function load(){
+  const {data, error} = await sb.from('orders').select('*, order_items(name, qty, price)').order('created_at', {ascending:false}).limit(150);
+  if (error) toast('Ошибка загрузки: ' + error.message);
+  S.orders = data || []; render();
+}
+let sub;
+function subscribe(){
+  if (sub) return;
+  sub = sb.channel('orders-live').on('postgres_changes', {event:'*', schema:'public', table:'orders'}, p => {
+    if (p.eventType === 'INSERT'){ S.fresh.add(p.new.id); beep(); toast('Новый заказ №' + p.new.id); }
+    load();
+  }).subscribe();
+}
+
+function card(o, col){
+  const c = COLS.find(x => x[0] === col)[2], nx = NEXT[o.status];
+  const t = new Date(o.created_at).toLocaleString('ru-RU', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'});
+  const tel = esc(o.phone).replace(/[^\d+]/g, '');
+  return `<div class="o ${S.fresh.has(o.id) ? 'fresh' : ''}" style="--c:${c}">
+  <div style="display:flex;justify-content:space-between;gap:8px"><b style="font-family:'Unbounded',sans-serif">№${o.id}</b><span>${t}</span></div>
+  <div><b>${esc(o.customer_name)}</b><br><a href="tel:${tel}">${esc(o.phone)}</a></div>
+  <div>📍 ${esc(o.address)}</div>
+  ${o.comment ? `<div>💬 ${esc(o.comment)}</div>` : ''}
+  <ul>${(o.order_items || []).map(i => `<li>${esc(i.name)} × ${i.qty}</li>`).join('')}</ul>
+  <div style="display:flex;justify-content:space-between;font-weight:800"><span>${o.payment === 'card' ? '💳 Картой' : '💵 Наличными'}</span><span>${rub(o.total)}</span></div>
+  ${LABEL[o.status] ? `<b style="color:${o.status === 'done' ? '#2E7D4F' : '#B3172A'}">${LABEL[o.status]}</b>` : `<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn alt" data-id="${o.id}" data-s="${nx[0]}">${nx[1]}</button><button class="btn ghost" data-id="${o.id}" data-s="cancelled">Отменить</button></div>`}</div>`;
+}
+function render(){
+  const app = document.getElementById('app');
+  if (S.state === 'loading') return app.innerHTML = '<div class="box">Загрузка…</div>';
+  if (S.state === 'login') return app.innerHTML = `<form id="login" class="box"><h1 style="font-size:24px">Вход для администратора</h1>
+    <div><label for="m">Email</label><input id="m" class="fld" type="email" required autocomplete="email"></div>
+    <div><label for="p">Пароль</label><input id="p" class="fld" type="password" required autocomplete="current-password"></div>
+    <button class="btn" ${S.busy ? 'disabled' : ''}>Войти</button></form>`;
+  if (S.state === 'denied') return app.innerHTML = `<div class="box"><h1 style="font-size:22px">Нет доступа</h1><div>Этот аккаунт не назначен администратором. Добавьте его в таблицу admins (см. admin.sql).</div><button class="btn" id="out">Выйти</button></div>`;
+  const by = c => S.orders.filter(o => c === 'finished' ? ['done','cancelled'].includes(o.status) : o.status === c);
+  app.innerHTML = `<div class="bar"><h1 style="font-size:18px">🍣 Заказы · Классные Суши</h1><div style="display:flex;gap:10px"><button class="btn alt" id="sound">🔔 Проверить звук</button><button class="btn ghost" id="out">Выйти</button></div></div>
+  <div class="board">${COLS.map(([k, n]) => { const list = by(k), shown = k === 'finished' ? list.slice(0, 20) : list; return `<div class="col"><h2>${n}<span>${list.length}</span></h2>${shown.map(o => card(o, k)).join('') || '<div style="opacity:.6">Пусто</div>'}</div>`; }).join('')}</div>`;
+}
+
+document.addEventListener('click', async e => {
+  if (e.target.id === 'out'){ await sb.auth.signOut(); location.reload(); }
+  if (e.target.id === 'sound') beep();
+  const b = e.target.closest('[data-s]'); if (!b) return;
+  if (b.dataset.s === 'cancelled' && !confirm('Отменить заказ №' + b.dataset.id + '?')) return;
+  b.disabled = true;
+  const {error} = await sb.from('orders').update({status: b.dataset.s}).eq('id', b.dataset.id);
+  if (error){ toast('Не удалось изменить статус: ' + error.message); b.disabled = false; } else load();
+});
+document.addEventListener('submit', async e => {
+  if (e.target.id !== 'login') return;
+  e.preventDefault(); S.busy = true; render();
+  const {error} = await sb.auth.signInWithPassword({email: document.getElementById('m').value.trim(), password: document.getElementById('p').value});
+  S.busy = false;
+  if (error){ render(); return toast('Неверный email или пароль'); }
+  check();
+});
+check();
+</script>
+</body>
+</html>

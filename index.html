@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Классные Суши</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;800&family=Unbounded:wght@600;800&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:'Nunito',sans-serif;color:#1F1B3A;background:#FFF5F3}
+h1,h2,h3{font-family:'Unbounded',sans-serif;margin:0}
+button,input,select,textarea{font:inherit}button{cursor:pointer}
+.bar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;padding:12px 5%;background:#fff;position:sticky;top:0;z-index:5;box-shadow:0 2px 12px rgba(31,27,58,.06)}
+.nav{border:0;background:none;padding:10px 16px;min-height:44px;border-radius:99px;font-weight:800;color:#1F1B3A;position:relative;transition:.2s}
+.nav:hover{background:#FFD6DE}.nav.on{background:#1F1B3A;color:#fff}
+.bdg{position:absolute;top:2px;right:0;background:#D62839;color:#fff;border-radius:99px;font-size:12px;min-width:20px;height:20px;display:flex;align-items:center;justify-content:center;animation:pop .5s}
+.btn{border:0;border-radius:99px;padding:12px 26px;min-height:48px;font-weight:800;background:#D62839;color:#fff;transition:transform .2s,box-shadow .2s;box-shadow:0 5px 0 #8E1523;display:inline-flex;align-items:center;justify-content:center;gap:8px}
+.btn:hover{transform:translateY(-2px)}.btn:active{transform:translateY(4px);box-shadow:0 1px 0 #8E1523}.btn:disabled{opacity:.6}
+.btn.alt{background:#FFC93C;color:#1F1B3A;box-shadow:0 5px 0 #B98A00}
+.scr{animation:up .6s both}
+@keyframes up{from{opacity:0;transform:translateY(26px)}}
+@keyframes pop{40%{transform:scale(1.5)}}
+@keyframes fl{50%{transform:translateY(-16px) rotate(4deg)}}.float{animation:fl 5s ease-in-out infinite}
+@keyframes sp{to{transform:rotate(360deg)}}.spin{animation:sp 40s linear infinite;transform-origin:150px 150px}
+@keyframes fall{to{transform:translate(90px,640px) rotate(540deg)}}
+.petal{position:absolute;top:-30px;width:14px;height:14px;border-radius:14px 0 14px 0;background:#FFB3C6;animation:fall 10s linear infinite}
+@keyframes mq{to{transform:translateX(-50%)}}.mq{display:flex;gap:44px;white-space:nowrap;animation:mq 24s linear infinite;width:max-content}
+.card{background:#fff;border-radius:24px;overflow:hidden;box-shadow:0 8px 24px rgba(31,27,58,.08);transition:transform .25s,box-shadow .25s;display:flex;flex-direction:column}
+.grid .card:hover{transform:translateY(-6px) rotate(-.5deg);box-shadow:0 18px 34px rgba(31,27,58,.16)}
+.dish{transition:transform .4s}.card:hover .dish{transform:scale(1.12) rotate(14deg)}
+.chip{border:2px solid #1F1B3A;background:#fff;border-radius:99px;padding:8px 18px;min-height:44px;font-weight:800;color:#1F1B3A;transition:.2s}
+.chip:hover{background:#FFC93C}.chip.on{background:#1F1B3A;color:#fff}
+.fld{width:100%;border:2px solid #D9D3EA;border-radius:14px;padding:12px 16px;min-height:48px;background:#fff;color:#1F1B3A;transition:.2s}
+.fld:focus{outline:0;border-color:#D62839;box-shadow:0 0 0 4px #FFD6DE}
+label{font-weight:800;display:block;margin-bottom:6px}
+.sq{border:2px solid #1F1B3A;background:#fff;border-radius:12px;width:44px;height:44px;font-weight:800;font-size:20px;color:#1F1B3A}.sq:hover{background:#FFC93C}
+.wrap{max-width:1200px;margin:0 auto;padding:48px 5% 72px}
+#toast{position:fixed;left:50%;bottom:24px;transform:translate(-50%,120px);background:#1F1B3A;color:#fff;padding:14px 24px;border-radius:99px;font-weight:800;transition:.3s;z-index:9;max-width:90vw;text-align:center}
+#toast.show{transform:translate(-50%,0)}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="toast" role="status"></div>
+<script>
+// ===== НАСТРОЙКА: вставьте данные из Supabase → Project Settings → API =====
+const SUPABASE_URL = 'https://octgohfcbrhmwoaikthi.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_jHX4mGBF7TI5ltljeSwH_Q_g2rtaHt1';
+// =========================================================================
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const rub = n => Number(n).toLocaleString('ru-RU') + ' ₽';
+const S = {user:null, profile:{}, menu:[], cart:{}, cat:'Все', tab:'login', view:'home', done:null, busy:false, ready:false};
+let tt;
+function toast(t){const e=document.getElementById('toast');e.textContent=t;e.classList.add('show');clearTimeout(tt);tt=setTimeout(()=>e.classList.remove('show'),3800)}
+
+const logo = `<svg width="76" height="52" viewBox="0 0 120 82" aria-hidden="true"><path d="M14 34v30a30 11 0 0 0 60 0V34z" fill="#22223B"/><path d="M22 44v18M34 46v20M46 47v21M58 46v20M68 44v18" stroke="#3A3A5C" stroke-width="2" stroke-linecap="round"/><ellipse cx="44" cy="34" rx="30" ry="11" fill="#22223B"/><ellipse cx="44" cy="34" rx="25" ry="8.5" fill="#fff"/><ellipse cx="44" cy="34" rx="14" ry="5" fill="#FF8A5B"/><ellipse cx="44" cy="34" rx="5" ry="2.2" fill="#7BC47F"/><line x1="112" y1="6" x2="52" y2="30" stroke="#B8733A" stroke-width="4.5" stroke-linecap="round"/><line x1="116" y1="18" x2="58" y2="38" stroke="#E0A96D" stroke-width="4.5" stroke-linecap="round"/><line x1="104" y1="9" x2="109" y2="7" stroke="#D62839" stroke-width="4.5" stroke-linecap="round"/><line x1="108" y1="20" x2="113" y2="18.3" stroke="#D62839" stroke-width="4.5" stroke-linecap="round"/></svg>`;
+function dish(k, t, s = 110){
+  t = esc(t);
+  const g = k === 'nigiri' ? `<ellipse cx="50" cy="64" rx="34" ry="16" fill="#fff"/><ellipse cx="50" cy="52" rx="40" ry="19" fill="${t}"/><path d="M26 50q24-10 48 0" stroke="#fff" stroke-width="3" fill="none" opacity=".6"/>`
+    : k === 'cup' ? `<circle cx="50" cy="50" r="44" fill="#fff" stroke="#1F1B3A" stroke-width="4"/><circle cx="50" cy="50" r="33" fill="${t}"/><path d="M30 42q8-12 22-10" stroke="#fff" stroke-width="4" fill="none" stroke-linecap="round" opacity=".7"/>`
+    : `<circle cx="50" cy="50" r="46" fill="#22223B"/><circle cx="50" cy="50" r="38" fill="#fff"/><circle cx="50" cy="50" r="24" fill="${t}"/><circle cx="50" cy="50" r="9" fill="#7BC47F"/>`;
+  return `<svg class="dish" width="${s}" height="${s}" viewBox="0 0 100 100" aria-hidden="true">${g}</svg>`;
+}
+const count = () => Object.values(S.cart).reduce((a, b) => a + b, 0);
+const lines = () => S.menu.filter(m => S.cart[m.id]).map(m => ({...m, qty: S.cart[m.id], sum: m.price * S.cart[m.id]}));
+const total = () => lines().reduce((a, l) => a + l.sum, 0);
+
+// ---------- Данные ----------
+async function loadMenu(){
+  const {data, error} = await sb.from('menu_items').select('*').eq('available', true).order('sort');
+  if (error) toast('Не удалось загрузить меню: ' + error.message);
+  S.menu = data || [];
+}
+async function loadUser(){
+  if (!S.user){ S.cart = {}; S.profile = {}; return; }
+  const [c, p] = await Promise.all([
+    sb.from('cart_items').select('item_id, qty'),
+    sb.from('profiles').select('*').eq('id', S.user.id).maybeSingle()]);
+  S.cart = Object.fromEntries((c.data || []).map(r => [r.item_id, r.qty]));
+  S.profile = p.data || {};
+}
+async function setQty(id, q){
+  if (!S.user){ toast('Войдите, чтобы добавлять блюда в корзину'); go('login'); return; }
+  const prev = S.cart[id];
+  if (q <= 0) delete S.cart[id]; else S.cart[id] = q;
+  render(false);
+  const r = q <= 0 ? await sb.from('cart_items').delete().eq('item_id', id)
+                   : await sb.from('cart_items').upsert({item_id: id, qty: q}, {onConflict: 'user_id,item_id'});
+  if (r.error){ if (prev) S.cart[id] = prev; else delete S.cart[id]; render(false); toast('Ошибка корзины: ' + r.error.message); }
+}
+
+// ---------- Страницы ----------
+function header(){
+  const v = S.view, on = k => v === k ? 'on' : '', n = count();
+  const name = S.user ? esc(S.user.user_metadata?.full_name || S.user.email.split('@')[0]) : '';
+  return `<div class="bar"><button class="nav" data-a="go" data-v="home" style="display:flex;align-items:center;gap:10px;padding:4px 8px" aria-label="Классные Суши — на главную">${logo}<span style="font-family:'Unbounded',sans-serif;font-weight:800;font-size:18px">Классные <span style="color:#D62839">Суши</span></span></button>
+  <div style="display:flex;flex-wrap:wrap;align-items:center;gap:4px">
+  <button class="nav ${on('home')}" data-a="go" data-v="home">Главная</button>
+  <button class="nav ${on('menu')}" data-a="go" data-v="menu">Меню</button>
+  <button class="nav ${on('cart')}" data-a="go" data-v="cart">Корзина${n ? `<span class="bdg">${n}</span>` : ''}</button>
+  ${S.user ? `<button class="nav" data-a="logout">${name} · Выйти</button>` : `<button class="nav ${on('login')}" data-a="go" data-v="login">Войти</button>`}</div></div>`;
+}
+function home(){
+  const petals = [[8,0,14],[22,3,10],[41,6,14],[58,1.5,11],[73,4.5,14],[90,7.5,10]].map(p => `<span class="petal" style="left:${p[0]}%;animation-delay:${p[1]}s;width:${p[2]}px;height:${p[2]}px"></span>`).join('');
+  const words = ['Роллы','Нигири','Сашими','Сеты','Рамен','Гёдза','Моти','Матча'].map(w => `<span>${w} •</span>`).join('');
+  const feat = (bg, t, d) => `<div class="card" style="background:${bg};padding:32px;gap:14px"><h3 style="font-size:20px">${t}</h3><div style="line-height:1.6">${d}</div></div>`;
+  return `<div class="scr"><div style="position:relative;overflow:hidden;background:#1F1B3A;color:#fff">${petals}
+  <div style="max-width:1200px;margin:0 auto;padding:72px 5%;display:flex;flex-wrap:wrap;align-items:center;gap:40px;position:relative">
+  <div style="flex:1 1 380px"><div style="display:inline-block;background:#FFC93C;color:#1F1B3A;font-weight:800;border-radius:99px;padding:6px 16px;margin-bottom:20px">Суши-бар</div>
+  <h1 style="font-size:clamp(36px,6vw,56px);line-height:1.05;font-weight:800">Классные <span style="color:#FF8FA3">Суши</span></h1>
+  <p style="font-size:20px;line-height:1.6;color:#E6E1F5;max-width:520px;margin:22px 0 32px">Свежие роллы, нигири и сашими, горячий рамен и ароматный чай — в тёплой атмосфере настоящей Японии. Приходите вдвоём, с семьёй или с друзьями: у нас всегда уютно.</p>
+  <div style="display:flex;flex-wrap:wrap;gap:16px"><button class="btn" data-a="go" data-v="menu">Смотреть меню</button>${S.user ? '' : '<button class="btn alt" data-a="go" data-v="login">Войти или зарегистрироваться</button>'}</div></div>
+  <div style="flex:1 1 300px;display:flex;justify-content:center"><svg class="float" width="340" height="340" viewBox="0 0 300 300" aria-hidden="true"><circle cx="150" cy="150" r="140" fill="#D62839" opacity=".25"/><g class="spin"><circle cx="150" cy="150" r="124" fill="#22223B"/><circle cx="150" cy="150" r="104" fill="#fff"/><circle cx="150" cy="150" r="94" fill="#F4EBDD"/><circle cx="150" cy="150" r="64" fill="#FF8A5B"/><circle cx="150" cy="150" r="34" fill="#FFB38F"/><circle cx="150" cy="150" r="14" fill="#7BC47F"/></g></svg></div></div></div>
+  <div style="background:#D62839;color:#fff;padding:14px 0;overflow:hidden;font-family:'Unbounded',sans-serif;font-weight:600"><div class="mq">${words}${words}</div></div>
+  <div class="wrap"><h2 style="font-size:34px;text-align:center">Почему у нас так хорошо</h2>
+  <p style="text-align:center;font-size:18px;margin:12px auto 40px;max-width:560px">Мы собрали всё, за что любят японские дома и харчевни: тепло, тишину, вкус.</p>
+  <div class="grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:24px">
+  ${feat('#FFD6DE','🏮 Японская атмосфера','Бумажные фонари, светлое дерево, ширмы сёдзи и мягкий свет. Достаточно переступить порог — и вы уже в Токио.')}
+  ${feat('#D4EBD9','🍵 Домашний уют','Удобные места для двоих и для большой компании, неспешный сервис и горячий чай, пока готовится ваш заказ.')}
+  ${feat('#FFF0C2','🍣 Любимые вкусы','От классических роллов до сетов для праздника: выбирайте на сайте и оформляйте доставку за пару минут.')}</div></div></div>`;
+}
+function menu(anim){
+  const cats = ['Все', ...new Set(S.menu.map(m => m.category))];
+  const items = S.menu.filter(m => S.cat === 'Все' || m.category === S.cat);
+  return `<div class="wrap ${anim ? 'scr' : ''}"><h1 style="font-size:clamp(30px,5vw,42px)">Меню</h1>
+  <p style="font-size:18px;margin:10px 0 24px">Выберите блюда — они попадут в вашу корзину.</p>
+  <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:32px">${cats.map(c => `<button class="chip ${S.cat === c ? 'on' : ''}" data-a="cat" data-c="${esc(c)}">${esc(c)}</button>`).join('')}</div>
+  <div class="grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:24px">
+  ${items.map((m, i) => { const q = S.cart[m.id] || 0; return `<div class="card ${anim ? 'scr' : ''}" style="animation-delay:${(i % 12) * .05}s">
+  <div style="height:160px;display:flex;align-items:center;justify-content:center;background:${esc(m.tint)}33">${dish(m.kind, m.tint)}</div>
+  <div style="padding:20px;display:flex;flex-direction:column;gap:8px;flex:1"><h3 style="font-size:17px">${esc(m.name)}</h3><div style="line-height:1.5;flex:1">${esc(m.description)}</div>
+  <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:8px"><span style="font-family:'Unbounded',sans-serif;font-weight:800;font-size:20px">${rub(m.price)}</span>
+  <button class="btn" style="padding:8px 18px;min-height:44px" data-a="add" data-id="${esc(m.id)}">В корзину${q ? `<span style="background:#fff;color:#D62839;border-radius:99px;padding:0 8px;font-size:13px">${q}</span>` : ''}</button></div></div></div>`; }).join('')}</div></div>`;
+}
+function cart(anim){
+  const cls = anim ? 'scr' : '';
+  if (!S.user) return `<div class="wrap ${cls}" style="max-width:1000px"><h1 style="font-size:clamp(30px,5vw,42px);margin-bottom:28px">Корзина</h1><div class="card" style="padding:48px 32px;align-items:center;text-align:center;gap:16px"><h2 style="font-size:24px">Войдите, чтобы увидеть корзину</h2><div style="max-width:420px;line-height:1.6">Корзина привязана к вашему аккаунту: выбранные блюда сохраняются между визитами.</div><button class="btn" data-a="go" data-v="login">Войти</button></div></div>`;
+  const L = lines(), p = S.profile || {}, name = p.full_name || S.user.user_metadata?.full_name || '';
+  const thanks = S.done ? `<div class="card scr" style="background:#D4EBD9;padding:28px;margin-bottom:24px"><h2 style="font-size:22px">Спасибо! Заказ №${S.done} принят.</h2><p style="margin:10px 0 0">Мы свяжемся с вами по указанному номеру для подтверждения.</p></div>` : '';
+  if (!L.length) return `<div class="wrap ${cls}" style="max-width:1000px"><h1 style="font-size:clamp(30px,5vw,42px);margin-bottom:28px">Корзина</h1>${thanks}<div class="card" style="padding:48px 32px;align-items:center;text-align:center;gap:16px"><h2 style="font-size:24px">В корзине пока пусто</h2><button class="btn" data-a="go" data-v="menu">Выбрать блюда</button></div></div>`;
+  return `<div class="wrap ${cls}" style="max-width:1100px"><h1 style="font-size:clamp(30px,5vw,42px);margin-bottom:28px">Корзина</h1>${thanks}
+  <div style="display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start">
+  <div style="flex:999 1 440px;min-width:0;display:flex;flex-direction:column;gap:14px">
+  ${L.map(l => `<div class="card" style="flex-direction:row;flex-wrap:wrap;align-items:center;gap:16px;padding:16px"><div style="width:72px;height:72px;border-radius:50%;background:${esc(l.tint)}33;display:flex;align-items:center;justify-content:center">${dish(l.kind, l.tint, 48)}</div>
+  <div style="flex:1 1 140px"><h3 style="font-size:16px">${esc(l.name)}</h3><div>${rub(l.price)}</div></div>
+  <div style="display:flex;align-items:center;gap:8px"><button class="sq" aria-label="Меньше" data-a="dec" data-id="${esc(l.id)}">−</button><b style="min-width:24px;text-align:center">${l.qty}</b><button class="sq" aria-label="Больше" data-a="inc" data-id="${esc(l.id)}">+</button></div>
+  <div style="min-width:90px;text-align:right;font-family:'Unbounded',sans-serif;font-weight:800">${rub(l.sum)}</div></div>`).join('')}</div>
+  <form id="order" class="card" style="flex:1 1 320px;padding:28px;gap:14px;background:#fff">
+  <h2 style="font-size:20px">Доставка</h2>
+  <div><label for="o-name">ФИО</label><input id="o-name" class="fld" required autocomplete="name" placeholder="Иванов Иван Иванович" value="${esc(name)}"></div>
+  <div><label for="o-phone">Телефон</label><input id="o-phone" class="fld" required type="tel" autocomplete="tel" placeholder="+7 900 000-00-00" value="${esc(p.phone)}"></div>
+  <div><label for="o-addr">Адрес доставки</label><textarea id="o-addr" class="fld" required rows="2" autocomplete="street-address" placeholder="Город, улица, дом, квартира, подъезд, этаж">${esc(p.address)}</textarea></div>
+  <div><label for="o-com">Комментарий</label><input id="o-com" class="fld" placeholder="Код домофона, пожелания (необязательно)"></div>
+  <div><label for="o-pay">Оплата</label><select id="o-pay" class="fld"><option value="cash">Наличными курьеру</option><option value="card">Картой курьеру</option></select></div>
+  <div style="display:flex;justify-content:space-between;align-items:center;font-size:18px;border-top:2px dashed #D9D3EA;padding-top:14px"><span>Итого</span><b style="font-family:'Unbounded',sans-serif;font-size:24px;color:#D62839">${rub(total())}</b></div>
+  <button class="btn alt" type="submit" ${S.busy ? 'disabled' : ''}>Оформить заказ</button></form></div></div>`;
+}
+function login(anim){
+  const reg = S.tab === 'reg';
+  return `<div class="wrap ${anim ? 'scr' : ''}" style="max-width:1000px;display:flex;flex-wrap:wrap;align-items:stretch">
+  <div style="flex:1 1 300px;background:#1F1B3A;color:#fff;border-radius:32px 0 0 32px;padding:48px 36px;display:flex;flex-direction:column;justify-content:center;gap:20px;position:relative;overflow:hidden"><span class="petal" style="left:15%"></span><span class="petal" style="left:55%;animation-delay:4s"></span><span class="petal" style="left:80%;animation-delay:7s"></span>
+  <div class="float" style="width:fit-content">${logo}</div><h2 style="font-size:28px;line-height:1.2">${reg ? 'Присоединяйтесь к нам' : 'С возвращением!'}</h2><div style="line-height:1.6;color:#E6E1F5">Войдите, чтобы собирать корзину и оформлять заказы в «Классных Суши».</div></div>
+  <form id="auth" class="card" style="flex:1 1 340px;border-radius:0 32px 32px 0;padding:40px 36px;gap:16px">
+  <div style="display:flex;gap:10px"><button type="button" class="chip ${reg ? '' : 'on'}" data-a="tab" data-t="login">Войти</button><button type="button" class="chip ${reg ? 'on' : ''}" data-a="tab" data-t="reg">Регистрация</button></div>
+  ${reg ? '<div><label for="a-name">Имя</label><input id="a-name" class="fld" required autocomplete="name" placeholder="Как к вам обращаться"></div>' : ''}
+  <div><label for="a-mail">Email</label><input id="a-mail" class="fld" type="email" required autocomplete="email" placeholder="name@example.com"></div>
+  <div><label for="a-pass">Пароль</label><input id="a-pass" class="fld" type="password" required minlength="6" autocomplete="${reg ? 'new-password' : 'current-password'}" placeholder="Не короче 6 символов"></div>
+  <button class="btn" type="submit" ${S.busy ? 'disabled' : ''}>${reg ? 'Создать аккаунт' : 'Войти'}</button></form></div>`;
+}
+const foot = `<div style="background:#1F1B3A;color:#CFC9E6;padding:28px 5%;display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px"><b style="color:#fff">Классные Суши</b><span>[АДРЕС] · [ТЕЛЕФОН] · [ЧАСЫ РАБОТЫ]</span></div>`;
+
+function render(anim = true){
+  const f = document.activeElement, keep = f && f.id, val = keep ? f.value : null;
+  const body = !S.ready ? '<div class="wrap">Загрузка…</div>' : ({home, menu, cart, login}[S.view] || home)(anim);
+  document.getElementById('app').innerHTML = header() + body + foot;
+  if (keep && document.getElementById(keep)){ const n = document.getElementById(keep); if (!n.value) n.value = val; n.focus(); }
+}
+function go(v){ location.hash = v; }
+function route(){ S.view = location.hash.slice(1) || 'home'; if (S.view !== 'cart') S.done = null; render(true); scrollTo(0, 0); }
+
+// ---------- События ----------
+document.addEventListener('click', async e => {
+  const b = e.target.closest('[data-a]'); if (!b) return;
+  const a = b.dataset.a, id = b.dataset.id;
+  if (a === 'go') go(b.dataset.v);
+  else if (a === 'cat'){ S.cat = b.dataset.c; render(true); }
+  else if (a === 'tab'){ S.tab = b.dataset.t; render(false); }
+  else if (a === 'add' || a === 'inc') setQty(id, (S.cart[id] || 0) + 1);
+  else if (a === 'dec') setQty(id, (S.cart[id] || 0) - 1);
+  else if (a === 'logout'){ await sb.auth.signOut(); go('home'); }
+});
+document.addEventListener('submit', async e => {
+  e.preventDefault();
+  const v = i => document.getElementById(i)?.value.trim();
+  if (e.target.id === 'auth'){
+    const email = v('a-mail'), password = document.getElementById('a-pass').value;
+    S.busy = true; render(false);
+    const r = S.tab === 'reg'
+      ? await sb.auth.signUp({email, password, options: {data: {full_name: v('a-name')}}})
+      : await sb.auth.signInWithPassword({email, password});
+    S.busy = false;
+    if (r.error){ render(false); toast(r.error.message === 'Invalid login credentials' ? 'Неверный email или пароль' : r.error.message); return; }
+    if (!r.data.session){ render(false); toast('Аккаунт создан. Подтвердите email по ссылке из письма и войдите.'); return; }
+    toast('Добро пожаловать!'); go(count() ? 'cart' : 'menu');
+  }
+  if (e.target.id === 'order'){
+    const phone = v('o-phone');
+    if (!/^\+?[\d\s()\-]{10,18}$/.test(phone)) return toast('Проверьте номер телефона');
+    S.busy = true; render(false);
+    const {data, error} = await sb.rpc('place_order', {p_name: v('o-name'), p_phone: phone, p_address: v('o-addr'), p_comment: v('o-com') || null, p_payment: document.getElementById('o-pay').value});
+    S.busy = false;
+    if (error){ render(false); return toast('Не удалось оформить заказ: ' + error.message); }
+    S.cart = {}; S.done = data; await loadUser(); render(true);
+  }
+});
+window.addEventListener('hashchange', route);
+
+// ---------- Старт ----------
+(async () => {
+  await loadMenu();
+  const {data} = await sb.auth.getSession();
+  S.user = data.session?.user || null;
+  await loadUser();
+  S.ready = true; route();
+  sb.auth.onAuthStateChange((ev, session) => {
+    const u = session?.user || null;
+    if (ev === 'INITIAL_SESSION' || (u?.id === S.user?.id && ev !== 'SIGNED_OUT')) return;
+    S.user = u;
+    setTimeout(async () => { await loadUser(); render(false); }, 0);
+  });
+})();
+</script>
+</body>
+</html>
