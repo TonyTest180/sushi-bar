@@ -39,6 +39,18 @@ label{font-weight:800;display:block;margin-bottom:6px}
 #toast{position:fixed;left:50%;bottom:24px;transform:translate(-50%,120px);background:#1F1B3A;color:#fff;padding:14px 24px;border-radius:99px;font-weight:800;transition:.3s;z-index:9;max-width:90vw;text-align:center}
 #toast.show{transform:translate(-50%,0)}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+.trk{position:relative;display:grid;grid-template-columns:repeat(4,1fr);padding:4px 0}
+.rail{position:absolute;top:18px;left:12.5%;right:12.5%;height:6px;background:#E8E3F3;border-radius:9px;overflow:hidden}
+.fill{height:100%;width:0;background:linear-gradient(90deg,#FFC93C,#D62839);border-radius:9px;transition:width 1.1s cubic-bezier(.4,0,.2,1)}
+.st{display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;font-size:13px;font-weight:700;position:relative;color:#8C86A8;transition:color .4s .7s}
+.dot{width:30px;height:30px;border-radius:50%;background:#E8E3F3;display:flex;align-items:center;justify-content:center;transition:background .4s .7s,transform .5s .7s;z-index:1}
+.dot svg{opacity:0;transition:opacity .3s .9s}
+.st.on{color:#1F1B3A}.st.on .dot{background:#D62839}.st.on .dot svg{opacity:1}
+.st.cur .dot{transform:scale(1.2);animation:pulse 1.8s 1.6s infinite}.st.cur{color:#D62839}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(214,40,57,.5)}70%{box-shadow:0 0 0 12px rgba(214,40,57,0)}100%{box-shadow:0 0 0 0 rgba(214,40,57,0)}}
+.cx{display:flex;align-items:center;gap:10px;background:#FFE1E4;color:#B3172A;font-weight:800;border-radius:14px;padding:12px 16px;animation:shake .6s}
+.cx span{width:28px;height:28px;border-radius:50%;background:#D62839;color:#fff;display:flex;align-items:center;justify-content:center}
+@keyframes shake{20%,60%{transform:translateX(-8px)}40%,80%{transform:translateX(8px)}}
 </style>
 </head>
 <body>
@@ -52,7 +64,7 @@ const SUPABASE_ANON_KEY = 'sb_publishable_jHX4mGBF7TI5ltljeSwH_Q_g2rtaHt1';
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const rub = n => Number(n).toLocaleString('ru-RU') + ' ₽';
-const S = {user:null, profile:{}, menu:[], cart:{}, cat:'Все', tab:'login', view:'home', done:null, busy:false, ready:false};
+const S = {user:null, profile:{}, menu:[], cart:{}, cat:'Все', tab:'login', view:'home', done:null, busy:false, ready:false, orders:[]};
 let tt;
 function toast(t){const e=document.getElementById('toast');e.textContent=t;e.classList.add('show');clearTimeout(tt);tt=setTimeout(()=>e.classList.remove('show'),3800)}
 
@@ -75,12 +87,13 @@ async function loadMenu(){
   S.menu = data || [];
 }
 async function loadUser(){
-  if (!S.user){ S.cart = {}; S.profile = {}; return; }
+  if (!S.user){ S.cart = {}; S.profile = {}; S.orders = []; subOrders(); return; }
   const [c, p] = await Promise.all([
     sb.from('cart_items').select('item_id, qty'),
     sb.from('profiles').select('*').eq('id', S.user.id).maybeSingle()]);
   S.cart = Object.fromEntries((c.data || []).map(r => [r.item_id, r.qty]));
   S.profile = p.data || {};
+  await loadOrders(); subOrders();
 }
 async function setQty(id, q){
   if (!S.user){ toast('Войдите, чтобы добавлять блюда в корзину'); go('login'); return; }
@@ -101,6 +114,7 @@ function header(){
   <button class="nav ${on('home')}" data-a="go" data-v="home">Главная</button>
   <button class="nav ${on('menu')}" data-a="go" data-v="menu">Меню</button>
   <button class="nav ${on('cart')}" data-a="go" data-v="cart">Корзина${n ? `<span class="bdg">${n}</span>` : ''}</button>
+  ${S.user ? `<button class="nav ${on('orders')}" data-a="go" data-v="orders">Заказы${activeCount() ? `<span class="bdg">${activeCount()}</span>` : ''}</button>` : ''}
   ${S.user ? `<button class="nav" data-a="logout">${name} · Выйти</button>` : `<button class="nav ${on('login')}" data-a="go" data-v="login">Войти</button>`}</div></div>`;
 }
 function home(){
@@ -139,7 +153,7 @@ function cart(anim){
   const cls = anim ? 'scr' : '';
   if (!S.user) return `<div class="wrap ${cls}" style="max-width:1000px"><h1 style="font-size:clamp(30px,5vw,42px);margin-bottom:28px">Корзина</h1><div class="card" style="padding:48px 32px;align-items:center;text-align:center;gap:16px"><h2 style="font-size:24px">Войдите, чтобы увидеть корзину</h2><div style="max-width:420px;line-height:1.6">Корзина привязана к вашему аккаунту: выбранные блюда сохраняются между визитами.</div><button class="btn" data-a="go" data-v="login">Войти</button></div></div>`;
   const L = lines(), p = S.profile || {}, name = p.full_name || S.user.user_metadata?.full_name || '';
-  const thanks = S.done ? `<div class="card scr" style="background:#D4EBD9;padding:28px;margin-bottom:24px"><h2 style="font-size:22px">Спасибо! Заказ №${S.done} принят.</h2><p style="margin:10px 0 0">Мы свяжемся с вами по указанному номеру для подтверждения.</p></div>` : '';
+  const thanks = S.done ? `<div class="card scr" style="background:#D4EBD9;padding:28px;margin-bottom:24px"><h2 style="font-size:22px">Спасибо! Заказ №${S.done} принят.</h2><p style="margin:10px 0 0">Мы свяжемся с вами по указанному номеру для подтверждения.</p><div style="margin-top:14px"><button class="btn" data-a="go" data-v="orders">Отследить заказ</button></div></div>` : '';
   if (!L.length) return `<div class="wrap ${cls}" style="max-width:1000px"><h1 style="font-size:clamp(30px,5vw,42px);margin-bottom:28px">Корзина</h1>${thanks}<div class="card" style="padding:48px 32px;align-items:center;text-align:center;gap:16px"><h2 style="font-size:24px">В корзине пока пусто</h2><button class="btn" data-a="go" data-v="menu">Выбрать блюда</button></div></div>`;
   return `<div class="wrap ${cls}" style="max-width:1100px"><h1 style="font-size:clamp(30px,5vw,42px);margin-bottom:28px">Корзина</h1>${thanks}
   <div style="display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start">
@@ -174,12 +188,76 @@ const foot = `<div style="background:#1F1B3A;color:#CFC9E6;padding:28px 5%;displ
 
 function render(anim = true){
   const f = document.activeElement, keep = f && f.id, val = keep ? f.value : null;
-  const body = !S.ready ? '<div class="wrap">Загрузка…</div>' : ({home, menu, cart, login}[S.view] || home)(anim);
-  document.getElementById('app').innerHTML = header() + body + foot;
+  const body = !S.ready ? '<div class="wrap">Загрузка…</div>' : ({home, menu, cart, login, orders: ordersView}[S.view] || home)(anim);
+  document.getElementById('app').innerHTML = header() + body + foot; initTrk();
   if (keep && document.getElementById(keep)){ const n = document.getElementById(keep); if (!n.value) n.value = val; n.focus(); }
 }
 function go(v){ location.hash = v; }
 function route(){ S.view = location.hash.slice(1) || 'home'; if (S.view !== 'cart') S.done = null; render(true); scrollTo(0, 0); }
+
+// ---------- Заказы клиента ----------
+const STEPS = ['new', 'cooking', 'delivering', 'done'], STEP_LABEL = ['Принят', 'Готовится', 'В пути', 'Доставлен'], FIN = ['done', 'cancelled'];
+const ST_TEXT = {new:'Заказ принят, ждёт подтверждения', cooking:'Готовим ваш заказ', delivering:'Курьер уже в пути', done:'Заказ доставлен. Приятного аппетита!', cancelled:'Заказ отменён'};
+const activeCount = () => S.orders.filter(o => !FIN.includes(o.status)).length;
+function refreshBar(){ const b = document.querySelector('.bar'); if (b) b.outerHTML = header(); }
+function trk(o){
+  if (o.status === 'cancelled') return '<div class="cx"><span>✕</span> Заказ отменён</div>';
+  const check = '<svg viewBox="0 0 16 16" width="14" height="14"><path d="M3 8.5l3.2 3L13 4.5" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  return `<div class="trk" data-i="${STEPS.indexOf(o.status)}"><div class="rail"><div class="fill"></div></div>${STEP_LABEL.map(l => `<div class="st"><div class="dot">${check}</div><span>${l}</span></div>`).join('')}</div>`;
+}
+function setTrk(w, i){
+  const t = w.querySelector('.trk'); if (!t) return;
+  t.querySelector('.fill').style.width = (i / 3 * 100) + '%';
+  t.querySelectorAll('.st').forEach((s, k) => { s.classList.toggle('on', k <= i); s.classList.toggle('cur', k === i); });
+}
+function initTrk(){
+  document.querySelectorAll('.trkwrap').forEach(w => { const t = w.querySelector('.trk'); if (t) requestAnimationFrame(() => requestAnimationFrame(() => setTrk(w, +t.dataset.i))); });
+}
+function ordersView(anim){
+  const cls = anim ? 'scr' : '', head = '<h1 style="font-size:clamp(30px,5vw,42px)">Мои заказы</h1>';
+  if (!S.user) return `<div class="wrap ${cls}" style="max-width:900px">${head}<div class="card" style="margin-top:28px;padding:48px 32px;align-items:center;text-align:center;gap:16px"><h2 style="font-size:24px">Войдите, чтобы увидеть заказы</h2><button class="btn" data-a="go" data-v="login">Войти</button></div></div>`;
+  const oc = o => `<div class="card ${cls}" data-oid="${o.id}" style="padding:22px;gap:14px">
+    <div style="display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px"><h3 style="font-size:17px">Заказ №${o.id}</h3><span>${new Date(o.created_at).toLocaleString('ru-RU', {day:'numeric', month:'long', hour:'2-digit', minute:'2-digit'})}</span></div>
+    <div class="stt" style="font-weight:800">${ST_TEXT[o.status] || ''}</div>
+    <div class="trkwrap">${trk(o)}</div>
+    <ul style="margin:0;padding-left:18px;line-height:1.6">${(o.order_items || []).map(i => `<li>${esc(i.name)} × ${i.qty}</li>`).join('')}</ul>
+    <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;border-top:2px dashed #D9D3EA;padding-top:12px"><span>📍 ${esc(o.address)} · ${o.payment === 'card' ? 'картой курьеру' : 'наличными'}</span><b style="font-family:'Unbounded',sans-serif">${rub(o.total)}</b></div></div>`;
+  const sec = (t, l) => l.length ? `<h2 style="font-size:20px;margin:28px 0 14px">${t}</h2><div style="display:flex;flex-direction:column;gap:16px">${l.map(oc).join('')}</div>` : '';
+  const empty = '<div class="card" style="margin-top:28px;padding:48px 32px;align-items:center;text-align:center;gap:16px"><h2 style="font-size:24px">Заказов пока нет</h2><button class="btn" data-a="go" data-v="menu">Выбрать блюда</button></div>';
+  return `<div class="wrap ${cls}" style="max-width:900px">${head}${S.orders.length ? sec('Текущие', S.orders.filter(o => !FIN.includes(o.status))) + sec('История', S.orders.filter(o => FIN.includes(o.status))) : empty}</div>`;
+}
+async function loadOrders(){
+  if (!S.user){ S.orders = []; return; }
+  const {data} = await sb.from('orders').select('*, order_items(name, qty, price)').order('created_at', {ascending: false}).limit(50);
+  S.orders = data || [];
+  if (S.ready){ if (S.view === 'orders') render(false); else refreshBar(); }
+}
+function applyStatus(n){
+  const i = S.orders.findIndex(x => x.id === n.id);
+  if (i < 0) return loadOrders();
+  const old = S.orders[i].status;
+  S.orders[i] = {...S.orders[i], ...n};
+  if (old === n.status) return;
+  toast(`Заказ №${n.id}: ${ST_TEXT[n.status]}`);
+  refreshBar();
+  const card = document.querySelector(`[data-oid="${n.id}"]`);
+  if (S.view !== 'orders' || !card) return;
+  card.querySelector('.stt').textContent = ST_TEXT[n.status];
+  const w = card.querySelector('.trkwrap');
+  if (n.status === 'cancelled' || !w.querySelector('.trk')){ w.innerHTML = trk(S.orders[i]); initTrk(); }
+  else setTrk(w, STEPS.indexOf(n.status));
+  if (FIN.includes(n.status)) setTimeout(() => { if (S.view === 'orders') render(false); }, 4000);
+}
+let ordCh = null, ordUid = null;
+function subOrders(){
+  if (ordCh && ordUid === S.user?.id) return;
+  if (ordCh){ sb.removeChannel(ordCh); ordCh = null; ordUid = null; }
+  if (!S.user) return;
+  ordUid = S.user.id;
+  ordCh = sb.channel('my-orders-' + ordUid).on('postgres_changes', {event:'*', schema:'public', table:'orders', filter:'user_id=eq.' + ordUid}, p => {
+    if (p.eventType === 'UPDATE') applyStatus(p.new); else if (p.eventType === 'INSERT') loadOrders();
+  }).subscribe();
+}
 
 // ---------- События ----------
 document.addEventListener('click', async e => {
@@ -195,24 +273,25 @@ document.addEventListener('click', async e => {
 document.addEventListener('submit', async e => {
   e.preventDefault();
   const v = i => document.getElementById(i)?.value.trim();
+  const btn = e.target.querySelector('[type=submit]');
   if (e.target.id === 'auth'){
-    const email = v('a-mail'), password = document.getElementById('a-pass').value;
-    S.busy = true; render(false);
+    const email = v('a-mail'), password = document.getElementById('a-pass').value, full_name = v('a-name');
+    btn.disabled = true;
     const r = S.tab === 'reg'
-      ? await sb.auth.signUp({email, password, options: {data: {full_name: v('a-name')}}})
+      ? await sb.auth.signUp({email, password, options: {data: {full_name}}})
       : await sb.auth.signInWithPassword({email, password});
-    S.busy = false;
-    if (r.error){ render(false); toast(r.error.message === 'Invalid login credentials' ? 'Неверный email или пароль' : r.error.message); return; }
-    if (!r.data.session){ render(false); toast('Аккаунт создан. Подтвердите email по ссылке из письма и войдите.'); return; }
+    btn.disabled = false;
+    if (r.error) return toast(r.error.message === 'Invalid login credentials' ? 'Неверный email или пароль' : r.error.message);
+    if (!r.data.session) return toast('Аккаунт создан. Подтвердите email по ссылке из письма и войдите.');
     toast('Добро пожаловать!'); go(count() ? 'cart' : 'menu');
   }
   if (e.target.id === 'order'){
-    const phone = v('o-phone');
-    if (!/^\+?[\d\s()\-]{10,18}$/.test(phone)) return toast('Проверьте номер телефона');
-    S.busy = true; render(false);
-    const {data, error} = await sb.rpc('place_order', {p_name: v('o-name'), p_phone: phone, p_address: v('o-addr'), p_comment: v('o-com') || null, p_payment: document.getElementById('o-pay').value});
-    S.busy = false;
-    if (error){ render(false); return toast('Не удалось оформить заказ: ' + error.message); }
+    const f = {p_name: v('o-name'), p_phone: v('o-phone'), p_address: v('o-addr'), p_comment: v('o-com') || null, p_payment: document.getElementById('o-pay').value};
+    if (!f.p_name || !f.p_address) return toast('Укажите ФИО и адрес доставки');
+    if (!/^\+?[\d\s()\-]{10,18}$/.test(f.p_phone)) return toast('Проверьте номер телефона');
+    btn.disabled = true;
+    const {data, error} = await sb.rpc('place_order', f);
+    if (error){ btn.disabled = false; return toast('Не удалось оформить заказ: ' + error.message); }
     S.cart = {}; S.done = data; await loadUser(); render(true);
   }
 });
