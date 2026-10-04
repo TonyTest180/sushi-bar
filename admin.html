@@ -78,8 +78,8 @@ function card(o, col){
   const tel = esc(o.phone).replace(/[^\d+]/g, '');
   return `<div class="o ${S.fresh.has(o.id) ? 'fresh' : ''}" style="--c:${c}">
   <div style="display:flex;justify-content:space-between;gap:8px"><b style="font-family:'Unbounded',sans-serif">№${o.id}</b><span>${t}</span></div>
-  <div><b>${esc(o.customer_name)}</b><br><a href="tel:${tel}">${esc(o.phone)}</a></div>
-  <div>📍 ${esc(o.address)}</div>
+  <div><b>${esc(o.customer_name) || 'Имя не указано'}</b><br><a href="tel:${tel}">${esc(o.phone)}</a></div>
+  <div>📍 ${esc(o.address) || 'Адрес не указан'}</div>
   ${o.comment ? `<div>💬 ${esc(o.comment)}</div>` : ''}
   <ul>${(o.order_items || []).map(i => `<li>${esc(i.name)} × ${i.qty}</li>`).join('')}</ul>
   <div style="display:flex;justify-content:space-between;font-weight:800"><span>${o.payment === 'card' ? '💳 Картой' : '💵 Наличными'}</span><span>${rub(o.total)}</span></div>
